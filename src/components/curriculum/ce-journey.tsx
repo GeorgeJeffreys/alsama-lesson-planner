@@ -1,69 +1,27 @@
 'use client';
 
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { C, SANS } from '@/lib/tokens';
 import { Icon } from '@/components/icon';
 import {
   CeLeftPanel, NavRow, Chip, Label, HiBtn,
   ZoomControls, SKILL_COLOR, skillKey,
-  type TierDef,
 } from './ce-shell';
 import type { CurriculumLesson } from '@/types/curriculum';
 
 export interface SkillLO { ref: string; lo: string; skill: string; count: number }
 export interface KnowledgeLO { ref: string; lo: string; count: number; weeks: number[] }
 
-// ── Tier constants ────────────────────────────────────────────────────────────
+// ── Dashed vertical connector ─────────────────────────────────────────────────
 
-const RAIL_W = 96;
-
-const J_TIERS: TierDef[] = [
-  { id: 'total',     label: 'Total LO',     sub: 'The whole-year outcome',    accent: '#8E1F49' },
-  { id: 'skill',     label: 'Skill LO',     sub: 'Click a skill to drill in', accent: C.pink },
-  { id: 'knowledge', label: 'Knowledge LO', sub: 'Click a KLO to drill in',   accent: C.amber },
-  { id: 'daily',     label: 'Daily LO',     sub: '5 per week · the lesson',   accent: C.faint },
-];
-
-// ── TierRow (non-sticky — works inside scale transform) ───────────────────────
-
-function TierRow({ tier, children, alignCenter = false, last = false }: {
-  tier: TierDef;
-  children: React.ReactNode;
-  alignCenter?: boolean;
-  last?: boolean;
-}) {
+function TreeConnector({ height = 24 }: { height?: number }) {
   return (
     <div style={{
-      display: 'flex',
-      borderBottom: last ? 'none' : `1px solid ${C.borderSoft}`,
-    }}>
-      <div style={{
-        width: RAIL_W, flexShrink: 0,
-        padding: '14px 12px 14px 16px',
-        display: 'flex', flexDirection: 'column', gap: 4,
-        borderRight: `1px dashed ${C.borderSoft}`,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 3, height: 14, borderRadius: 2, background: tier.accent }} />
-          <span style={{
-            fontFamily: SANS, fontSize: 10, fontWeight: 700, color: C.ink,
-            textTransform: 'uppercase', letterSpacing: '0.1em', lineHeight: 1.1,
-          }}>{tier.label}</span>
-        </div>
-        <span style={{ fontFamily: SANS, fontSize: 10, color: C.faint, lineHeight: 1.4 }}>
-          {tier.sub}
-        </span>
-      </div>
-      <div style={{
-        flex: 1, padding: '20px 24px',
-        display: 'flex',
-        alignItems: alignCenter ? 'center' : 'flex-start',
-        justifyContent: alignCenter ? 'center' : 'flex-start',
-      }}>
-        {children}
-      </div>
-    </div>
+      width: 2, height,
+      flexShrink: 0,
+      background: 'repeating-linear-gradient(to bottom, #D8CECC 0, #D8CECC 4px, transparent 4px, transparent 8px)',
+    }} />
   );
 }
 
@@ -424,7 +382,88 @@ export function JourneyLeft({
   );
 }
 
-// ── Journey Org Chart — progressive disclosure + pan ─────────────────────────
+// ── KLO branch: KLO card + optional daily chips below ────────────────────────
+
+function KloBranch({
+  k, skillRef, expanded, dailyLessons, onToggle, onDailyClick,
+}: {
+  k: KnowledgeLO;
+  skillRef: string;
+  expanded: boolean;
+  dailyLessons: CurriculumLesson[];
+  onToggle: (ref: string) => void;
+  onDailyClick: (l: CurriculumLesson) => void;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <KloCard k={k} focused={expanded} faded={false} onClick={() => onToggle(k.ref)} />
+      {expanded && (
+        <>
+          <TreeConnector height={16} />
+          {dailyLessons.length === 0 ? (
+            <span style={{ fontFamily: SANS, fontSize: 11, color: C.faint, fontStyle: 'italic' }}>
+              No daily lessons found.
+            </span>
+          ) : (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 520 }}>
+              {dailyLessons.map(l => (
+                <DailyChip key={l.id} lesson={l} onClick={() => onDailyClick(l)} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Skill branch: Skill card + optional KLO row below ────────────────────────
+
+function SkillBranch({
+  s, expanded, klos, expandedKlos, dailyByKey,
+  onToggleSkill, onToggleKlo, onDailyClick,
+}: {
+  s: SkillLO;
+  expanded: boolean;
+  klos: KnowledgeLO[];
+  expandedKlos: Set<string>;
+  dailyByKey: Map<string, CurriculumLesson[]>;
+  onToggleSkill: (ref: string) => void;
+  onToggleKlo: (ref: string) => void;
+  onDailyClick: (l: CurriculumLesson) => void;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <SkillCard s={s} focused={expanded} faded={false} onClick={() => onToggleSkill(s.ref)} />
+      {expanded && (
+        <>
+          <TreeConnector height={24} />
+          {klos.length === 0 ? (
+            <span style={{ fontFamily: SANS, fontSize: 11, color: C.faint, fontStyle: 'italic' }}>
+              Loading…
+            </span>
+          ) : (
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              {klos.map(k => (
+                <KloBranch
+                  key={k.ref}
+                  k={k}
+                  skillRef={s.ref}
+                  expanded={expandedKlos.has(k.ref)}
+                  dailyLessons={dailyByKey.get(`${s.ref}|${k.ref}`) ?? []}
+                  onToggle={onToggleKlo}
+                  onDailyClick={onDailyClick}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Journey Org Chart — recursive expanding tree ──────────────────────────────
 
 export function JourneyOrgChart({
   skillLOs, klosBySkill, allLessons, focusedSkillRef, focusedKRef,
@@ -443,10 +482,11 @@ export function JourneyOrgChart({
   const [zoom, setZoom] = useState(1.0);
   const [cursorMode, setCursorMode] = useState<'grab' | 'grabbing'>('grab');
   const [modalLesson, setModalLesson] = useState<CurriculumLesson | null>(null);
+  const [expandedSkills, setExpandedSkills] = useState<Set<string>>(new Set());
+  const [expandedKlos, setExpandedKlos] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
   const panRef = useRef({ active: false, moved: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
 
-  // Group daily lessons by skill+klo key
   const dailyByKey = useMemo(() => {
     const m = new Map<string, CurriculumLesson[]>();
     allLessons.forEach(l => {
@@ -459,7 +499,23 @@ export function JourneyOrgChart({
     return m;
   }, [allLessons]);
 
-  // ── Pan handlers ──────────────────────────────────────────────────────────
+  const toggleSkill = useCallback((ref: string) => {
+    setExpandedSkills(prev => {
+      const next = new Set(prev);
+      if (next.has(ref)) { next.delete(ref); } else { next.add(ref); }
+      return next;
+    });
+    onFocusSkill(ref);
+  }, [onFocusSkill]);
+
+  const toggleKlo = useCallback((ref: string) => {
+    setExpandedKlos(prev => {
+      const next = new Set(prev);
+      if (next.has(ref)) { next.delete(ref); } else { next.add(ref); }
+      return next;
+    });
+    onFocusKRef(ref);
+  }, [onFocusKRef]);
 
   function onPanStart(e: React.MouseEvent) {
     if (e.button !== 0 || !scrollRef.current) return;
@@ -492,7 +548,6 @@ export function JourneyOrgChart({
     if (panRef.current.moved) setCursorMode('grab');
   }
 
-  // Suppress card click if the mouse moved during the drag
   function onClickCapture(e: React.MouseEvent) {
     if (panRef.current.moved) {
       e.stopPropagation();
@@ -500,19 +555,12 @@ export function JourneyOrgChart({
     }
   }
 
-  const focusedKlos = focusedSkillRef ? (klosBySkill.get(focusedSkillRef) ?? []) : [];
-  const dailyLessons = (focusedSkillRef && focusedKRef)
-    ? (dailyByKey.get(`${focusedSkillRef}|${focusedKRef}`) ?? [])
-    : [];
-
   return (
     <>
       <div
         style={{
           flex: 1, position: 'relative', overflow: 'hidden',
-          background: C.cream,
-          cursor: cursorMode,
-          userSelect: 'none',
+          background: C.cream, cursor: cursorMode, userSelect: 'none',
         }}
         onMouseDown={onPanStart}
         onMouseMove={onPanMove}
@@ -520,81 +568,40 @@ export function JourneyOrgChart({
         onMouseLeave={onPanEnd}
         onClickCapture={onClickCapture}
       >
-        {/* Scrollable inner */}
         <div
           ref={scrollRef}
           style={{ position: 'absolute', inset: 0, overflowY: 'auto', overflowX: 'auto' }}
         >
-          {/* Scaled canvas */}
           <div style={{
             transform: `scale(${zoom})`,
-            transformOrigin: 'top left',
+            transformOrigin: 'top center',
             minWidth: 'max-content',
-            paddingBottom: 80,
+            padding: '40px 40px 80px',
           }}>
-
-            {/* ── Tier 1: Total LO — always visible ── */}
-            <TierRow tier={J_TIERS[0]} alignCenter>
+            {/* Root card centred */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <RootCard totalLessons={totalLessons} year={year} />
-            </TierRow>
-
-            {/* ── Tier 2: Skill LOs — always visible, all skills ── */}
-            <TierRow tier={J_TIERS[1]} last={!focusedSkillRef}>
-              <div style={{ display: 'flex', gap: 16, flexWrap: 'nowrap' }}>
+              <TreeConnector height={28} />
+              {/* Skill cards row — each has its own expanding subtree */}
+              <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
                 {skillLOs.map(s => (
-                  <SkillCard
+                  <SkillBranch
                     key={s.ref}
                     s={s}
-                    focused={s.ref === focusedSkillRef}
-                    faded={!!focusedSkillRef && s.ref !== focusedSkillRef}
-                    onClick={() => onFocusSkill(s.ref === focusedSkillRef ? null : s.ref)}
+                    expanded={expandedSkills.has(s.ref)}
+                    klos={klosBySkill.get(s.ref) ?? []}
+                    expandedKlos={expandedKlos}
+                    dailyByKey={dailyByKey}
+                    onToggleSkill={toggleSkill}
+                    onToggleKlo={toggleKlo}
+                    onDailyClick={setModalLesson}
                   />
                 ))}
               </div>
-            </TierRow>
-
-            {/* ── Tier 3: KLOs — only when a skill is focused ── */}
-            {focusedSkillRef && (
-              <TierRow tier={J_TIERS[2]} last={!focusedKRef}>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                  {focusedKlos.length === 0 ? (
-                    <span style={{
-                      fontFamily: SANS, fontSize: 12, color: C.faint, fontStyle: 'italic',
-                    }}>Loading knowledge outcomes…</span>
-                  ) : focusedKlos.map(k => (
-                    <KloCard
-                      key={k.ref}
-                      k={k}
-                      focused={k.ref === focusedKRef}
-                      faded={focusedKRef !== null && k.ref !== focusedKRef}
-                      onClick={() => onFocusKRef(k.ref === focusedKRef ? null : k.ref)}
-                    />
-                  ))}
-                </div>
-              </TierRow>
-            )}
-
-            {/* ── Tier 4: Daily LOs — only when both skill and KLO are focused ── */}
-            {focusedSkillRef && focusedKRef && (
-              <TierRow tier={J_TIERS[3]} last>
-                {dailyLessons.length === 0 ? (
-                  <span style={{ fontFamily: SANS, fontSize: 12, color: C.faint, fontStyle: 'italic' }}>
-                    No lessons found for this outcome.
-                  </span>
-                ) : (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {dailyLessons.map(l => (
-                      <DailyChip key={l.id} lesson={l} onClick={() => setModalLesson(l)} />
-                    ))}
-                  </div>
-                )}
-              </TierRow>
-            )}
-
+            </div>
           </div>
         </div>
 
-        {/* Zoom controls */}
         <ZoomControls
           zoom={zoom}
           onZoomIn={() => setZoom(z => Math.min(1.5, parseFloat((z + 0.1).toFixed(1))))}
