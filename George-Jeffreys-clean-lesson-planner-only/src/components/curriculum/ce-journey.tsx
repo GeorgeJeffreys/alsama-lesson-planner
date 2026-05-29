@@ -382,7 +382,7 @@ export function JourneyLeft({
   );
 }
 
-// ── Journey Org Chart — fixed-position tiers, no card jumping ────────────────
+// ── Journey Org Chart — flow layout, KLOs anchored on parent Skill card ───────
 
 export function JourneyOrgChart({
   skillLOs, klosBySkill, allLessons, focusedSkillRef, focusedKRef,
@@ -403,8 +403,13 @@ export function JourneyOrgChart({
   const [modalLesson, setModalLesson] = useState<CurriculumLesson | null>(null);
   const [expandedSkills, setExpandedSkills] = useState<Set<string>>(new Set());
   const [expandedKlos, setExpandedKlos] = useState<Set<string>>(new Set());
+  // canvas-space X centre for each expanded skill (used to anchor KLO groups)
+  const [kloPositions, setKloPositions] = useState<Map<string, number>>(new Map());
+
   const outerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const skillCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const panRef = useRef({ active: false, moved: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
 
   const dailyByKey = useMemo(() => {
@@ -419,14 +424,13 @@ export function JourneyOrgChart({
     return m;
   }, [allLessons]);
 
-  // KLOs visible in the KLO tier row (all expanded skills, flattened)
-  const visibleKlos = useMemo(() =>
-    [...expandedSkills].flatMap(skillRef =>
-      (klosBySkill.get(skillRef) ?? []).map(k => ({ k, skillRef }))
-    ),
+  const visibleKlosBySkill = useMemo(() =>
+    [...expandedSkills].map(skillRef => ({
+      skillRef,
+      klos: klosBySkill.get(skillRef) ?? [],
+    })),
   [expandedSkills, klosBySkill]);
 
-  // Daily lessons visible in the Daily tier row (all expanded KLOs, flattened)
   const visibleDailyLessons = useMemo(() => {
     const out: CurriculumLesson[] = [];
     expandedKlos.forEach(kRef => {
@@ -439,7 +443,7 @@ export function JourneyOrgChart({
     return out;
   }, [expandedKlos, klosBySkill, dailyByKey]);
 
-  // Pinch-to-zoom: ctrl+wheel fires on Mac trackpad pinch
+  // Pinch-to-zoom: ctrl+wheel = Mac trackpad pinch
   useEffect(() => {
     const el = outerRef.current;
     if (!el) return;
@@ -453,14 +457,33 @@ export function JourneyOrgChart({
     return () => el.removeEventListener('wheel', handleWheel);
   }, []);
 
-  const toggleSkill = useCallback((ref: string) => {
+  function handleSkillClick(ref: string) {
+    const isExpanding = !expandedSkills.has(ref);
+
     setExpandedSkills(prev => {
       const next = new Set(prev);
       if (next.has(ref)) next.delete(ref); else next.add(ref);
       return next;
     });
+
+    if (isExpanding) {
+      // Compute canvas-space centre X of this skill card
+      const cardEl = skillCardRefs.current.get(ref);
+      const canvas = canvasRef.current;
+      if (cardEl && canvas) {
+        const cardRect = cardEl.getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+        // getBoundingClientRect returns screen-space coords (after scale transform)
+        // divide by zoom to get canvas-space coordinate
+        const centerX = (cardRect.left - canvasRect.left + cardRect.width / 2) / zoom;
+        setKloPositions(m => new Map(m).set(ref, centerX));
+      }
+    } else {
+      setKloPositions(m => { const n = new Map(m); n.delete(ref); return n; });
+    }
+
     onFocusSkill(ref);
-  }, [onFocusSkill]);
+  }
 
   const toggleKlo = useCallback((ref: string) => {
     setExpandedKlos(prev => {
@@ -516,7 +539,7 @@ export function JourneyOrgChart({
         style={{
           flex: 1, position: 'relative', overflow: 'hidden',
           background: C.cream, cursor: cursorMode, userSelect: 'none',
-          touchAction: 'none',
+          touchAction: 'none', minWidth: 0, width: '100%',
         }}
         onMouseDown={onPanStart}
         onMouseMove={onPanMove}
@@ -528,70 +551,91 @@ export function JourneyOrgChart({
           ref={scrollRef}
           style={{ position: 'absolute', inset: 0, overflowY: 'auto', overflowX: 'auto' }}
         >
-          {/* Scaled canvas — fixed-position tiers so cards never shift on expand */}
-          <div style={{
-            transform: `scale(${zoom})`,
-            transformOrigin: 'top center',
-            position: 'relative',
-            minHeight: 1200,
-            minWidth: 1400,
-          }}>
-            {/* Tier 1: Total LO — top: 20px, always visible */}
-            <div style={{
-              position: 'absolute', top: 20, left: 0, right: 0,
-              display: 'flex', justifyContent: 'center',
-            }}>
-              <RootCard totalLessons={totalLessons} year={year} />
+          {/* Canvas: flow layout — tiers stack naturally, no absolute positioning on tiers */}
+          <div
+            ref={canvasRef}
+            style={{
+              transform: `scale(${zoom})`,
+              transformOrigin: 'top center',
+              // width: max-content so skill row never wraps; min-width: 100% to fill viewport
+              width: 'max-content',
+              minWidth: '100%',
+              paddingBottom: 80,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+            }}
+          >
+            {/* Tier 1: Total LO */}
+            <div style={{ padding: '28px 40px 24px', width: '100%', display: 'flex', justifyContent: 'center' }}>
+              <div style={{ maxWidth: 500, width: '100%' }}>
+                <RootCard totalLessons={totalLessons} year={year} />
+              </div>
             </div>
 
-            {/* Tier 2: Skill LOs — top: 140px, always visible */}
-            <div style={{
-              position: 'absolute', top: 140, left: 40, right: 40,
-              display: 'flex', justifyContent: 'center',
-            }}>
-              <div style={{ display: 'flex', gap: 16 }}>
+            {/* Tier 2: Skill LOs — flex row, never wraps, min-width: max-content */}
+            <div style={{ padding: '0 24px 24px', display: 'flex', justifyContent: 'center', width: '100%', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', flexDirection: 'row', gap: 16, flexWrap: 'nowrap', minWidth: 'max-content' }}>
                 {skillLOs.map(s => (
-                  <SkillCard
-                    key={s.ref} s={s}
-                    focused={expandedSkills.has(s.ref)}
-                    faded={false}
-                    onClick={() => toggleSkill(s.ref)}
-                  />
+                  <div
+                    key={s.ref}
+                    ref={el => { if (el) skillCardRefs.current.set(s.ref, el); else skillCardRefs.current.delete(s.ref); }}
+                  >
+                    <SkillCard
+                      s={s}
+                      focused={expandedSkills.has(s.ref)}
+                      faded={false}
+                      onClick={() => handleSkillClick(s.ref)}
+                    />
+                  </div>
                 ))}
               </div>
             </div>
 
-            {/* Tier 3: KLOs — top: 320px, visible when any skill expanded */}
+            {/* Tier 3: KLO row — position relative so groups can be anchored to parent skill */}
             {expandedSkills.size > 0 && (
               <div style={{
-                position: 'absolute', top: 320, left: 40, right: 40,
-                display: 'flex', justifyContent: 'center',
+                position: 'relative',
+                minHeight: 160,
+                width: '100%',
+                marginBottom: 16,
               }}>
-                {visibleKlos.length === 0 ? (
-                  <span style={{ fontFamily: SANS, fontSize: 12, color: C.faint, fontStyle: 'italic' }}>
-                    Loading knowledge outcomes…
-                  </span>
-                ) : (
-                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 1200 }}>
-                    {visibleKlos.map(({ k }) => (
-                      <KloCard
-                        key={k.ref} k={k}
-                        focused={expandedKlos.has(k.ref)}
-                        faded={false}
-                        onClick={() => toggleKlo(k.ref)}
-                      />
-                    ))}
-                  </div>
-                )}
+                {visibleKlosBySkill.map(({ skillRef, klos }) => {
+                  const centerX = kloPositions.get(skillRef) ?? 0;
+                  return (
+                    <div
+                      key={skillRef}
+                      style={{
+                        position: 'absolute',
+                        left: centerX,
+                        top: 8,
+                        transform: 'translateX(-50%)',
+                        display: 'flex',
+                        gap: 12,
+                        flexWrap: 'nowrap',
+                      }}
+                    >
+                      {klos.length === 0 ? (
+                        <span style={{ fontFamily: SANS, fontSize: 11, color: C.faint, fontStyle: 'italic', whiteSpace: 'nowrap' }}>
+                          Loading…
+                        </span>
+                      ) : klos.map(k => (
+                        <KloCard
+                          key={k.ref} k={k}
+                          focused={expandedKlos.has(k.ref)}
+                          faded={false}
+                          onClick={() => toggleKlo(k.ref)}
+                        />
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
-            {/* Tier 4: Daily LOs — top: 500px, visible when any KLO expanded */}
+            {/* Tier 4: Daily LOs */}
             {expandedKlos.size > 0 && (
-              <div style={{
-                position: 'absolute', top: 500, left: 40, right: 40,
-                display: 'flex', justifyContent: 'center',
-              }}>
+              <div style={{ padding: '0 40px 24px', display: 'flex', justifyContent: 'center', width: '100%', boxSizing: 'border-box' }}>
                 {visibleDailyLessons.length === 0 ? (
                   <span style={{ fontFamily: SANS, fontSize: 12, color: C.faint, fontStyle: 'italic' }}>
                     No lessons found for this outcome.
