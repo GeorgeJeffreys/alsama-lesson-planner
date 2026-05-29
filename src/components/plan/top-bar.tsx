@@ -19,6 +19,7 @@ function AlsamaMark() {
       fontFamily: SCRIPT, fontSize: 30, color: C.pink,
       lineHeight: 1, letterSpacing: '-0.01em',
       display: 'inline-flex', alignItems: 'baseline', gap: 2,
+      flexShrink: 0,
     }}>
       Alsama
       <svg width={15} height={12} viewBox="0 0 20 16" fill="none" style={{ marginLeft: 2, marginBottom: 2 }}>
@@ -36,30 +37,33 @@ export function TopBar({ lesson, saveStatus, onOpenSelector, onExport, exporting
     ? { bg: C.amberSoft, border: '#EFD9A5', color: '#7A5A11', icon: 'refresh' as const, label: 'Saving…' }
     : { bg: C.tealSoft, border: '#BCDED6', color: C.teal, icon: 'cloudCheck' as const, label: 'Autosaved · just now' };
 
-  const lessonTitle = lesson
-    ? (lesson.dailyLO.length > 40 ? lesson.dailyLO.slice(0, 40) + '…' : lesson.dailyLO)
-    : 'Select a lesson';
+  const lessonTitle = lesson ? lesson.dailyLO : 'Select a lesson';
   const lessonSub = lesson
     ? `${lesson.year} · Week ${lesson.week} · ${lesson.period} · ${lesson.id}`
     : 'Click to browse the curriculum';
 
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 16,
+      display: 'flex', alignItems: 'center', gap: 12,
       height: 60, padding: '0 24px',
       background: C.surface,
       borderBottom: `1px solid ${C.border}`,
       flexShrink: 0,
+      minWidth: 0,
     }}>
+      {/* Left: branding */}
       <AlsamaMark />
-      <div style={{ width: 1, height: 24, background: C.border, margin: '0 4px' }} />
-      <span style={{ fontFamily: SANS, fontSize: 12, fontWeight: 500, color: C.faint }}>Lesson Planner</span>
+      <div style={{ width: 1, height: 24, background: C.border, flexShrink: 0 }} />
+      <span style={{ fontFamily: SANS, fontSize: 12, fontWeight: 500, color: C.faint, flexShrink: 0 }}>
+        Lesson Planner
+      </span>
       <Link href="/curriculum" style={{
         fontFamily: SANS, fontSize: 12, fontWeight: 500,
         color: C.faint, textDecoration: 'none',
         padding: '3px 8px', borderRadius: 6,
         border: `1px solid transparent`,
         transition: 'color 0.12s',
+        flexShrink: 0,
       }}
         onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.color = C.pink; (e.currentTarget as HTMLAnchorElement).style.borderColor = C.pinkBorder; }}
         onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.color = C.faint; (e.currentTarget as HTMLAnchorElement).style.borderColor = 'transparent'; }}
@@ -67,43 +71,53 @@ export function TopBar({ lesson, saveStatus, onOpenSelector, onExport, exporting
         Curriculum
       </Link>
 
-      <div style={{ width: 16 }} />
-
-      {/* Lesson selector pill */}
+      {/* Centre: lesson selector pill — flex: 1 with minWidth: 0 so it can shrink */}
       <button
         onClick={onOpenSelector}
         style={{
           display: 'flex', alignItems: 'center', gap: 10,
           height: 38, padding: '0 14px',
           background: C.cream, border: `1px solid ${C.borderSoft}`,
-          borderRadius: 10, fontFamily: SANS, minWidth: 320,
+          borderRadius: 10, fontFamily: SANS,
           cursor: 'pointer',
+          flex: 1, minWidth: 0, maxWidth: 420,
         }}
       >
         <Icon name="calendar" size={15} color={C.pink} />
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.15 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{lessonTitle}</span>
-          <span style={{ fontSize: 11, color: C.faint }}>{lessonSub}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.15, minWidth: 0, flex: 1 }}>
+          <span style={{
+            fontSize: 13, fontWeight: 600, color: C.ink,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            width: '100%',
+          }}>{lessonTitle}</span>
+          <span style={{
+            fontSize: 11, color: C.faint,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            width: '100%',
+          }}>{lessonSub}</span>
         </div>
-        <div style={{ flex: 1 }} />
-        <Icon name="chevronDown" size={15} color={C.faint} />
+        <Icon name="chevronDown" size={15} color={C.faint} style={{ flexShrink: 0 }} />
       </button>
 
-      <div style={{ flex: 1 }} />
+      {/* Right: actions — all flexShrink: 0 so they never wrap */}
 
-      {/* Autosave indicator */}
+      {/* Autosave indicator — hides on narrow viewports */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
         padding: '6px 10px', borderRadius: 999,
         background: saveIndicator.bg,
         border: `1px solid ${saveIndicator.border}`,
-      }}>
+        flexShrink: 0,
+        // Hide first on narrow viewports
+        // @ts-ignore — inline style, media query handled via className if needed
+      }} className="top-bar-autosave">
         <Icon name={saveIndicator.icon} size={13} color={saveIndicator.color} />
-        <span style={{ fontFamily: SANS, fontSize: 11.5, fontWeight: 500, color: saveIndicator.color }}>
+        <span style={{ fontFamily: SANS, fontSize: 11.5, fontWeight: 500, color: saveIndicator.color, whiteSpace: 'nowrap' }}>
           {saveIndicator.label}
         </span>
       </div>
 
+      {/* Export PDF — collapses to icon-only on narrow viewports */}
       <button
         onClick={onExport}
         disabled={exporting}
@@ -115,10 +129,11 @@ export function TopBar({ lesson, saveStatus, onOpenSelector, onExport, exporting
           border: `1px solid ${C.border}`, borderRadius: 8,
           cursor: exporting ? 'default' : 'pointer',
           transition: 'color 0.15s',
+          flexShrink: 0, whiteSpace: 'nowrap',
         }}
       >
         <Icon name="download" size={14} color={exporting ? C.faint2 : C.ink} />
-        {exporting ? 'Generating…' : 'Export PDF'}
+        <span className="top-bar-export-label">{exporting ? 'Generating…' : 'Export PDF'}</span>
       </button>
 
       <button style={{
@@ -128,6 +143,7 @@ export function TopBar({ lesson, saveStatus, onOpenSelector, onExport, exporting
         background: C.pink, color: '#fff',
         border: 'none', borderRadius: 8,
         boxShadow: '0 1px 0 rgba(0,0,0,0.04), inset 0 -1px 0 rgba(0,0,0,0.08)',
+        flexShrink: 0, whiteSpace: 'nowrap', cursor: 'pointer',
       }}>
         <Icon name="send" size={13} color="#fff" />Send for approval
       </button>
