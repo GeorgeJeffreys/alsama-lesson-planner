@@ -394,9 +394,21 @@ function KloBranch({
   onToggle: (ref: string) => void;
   onDailyClick: (l: CurriculumLesson) => void;
 }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  function handleToggle() {
+    onToggle(k.ref);
+    // Keep the card in view after expansion — it stays anchored, children appear below
+    requestAnimationFrame(() => {
+      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <KloCard k={k} focused={expanded} faded={false} onClick={() => onToggle(k.ref)} />
+      <div ref={cardRef}>
+        <KloCard k={k} focused={expanded} faded={false} onClick={handleToggle} />
+      </div>
       {expanded && (
         <>
           <TreeConnector height={16} />
@@ -432,9 +444,20 @@ function SkillBranch({
   onToggleKlo: (ref: string) => void;
   onDailyClick: (l: CurriculumLesson) => void;
 }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  function handleToggle() {
+    onToggleSkill(s.ref);
+    requestAnimationFrame(() => {
+      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <SkillCard s={s} focused={expanded} faded={false} onClick={() => onToggleSkill(s.ref)} />
+      <div ref={cardRef}>
+        <SkillCard s={s} focused={expanded} faded={false} onClick={handleToggle} />
+      </div>
       {expanded && (
         <>
           <TreeConnector height={24} />
