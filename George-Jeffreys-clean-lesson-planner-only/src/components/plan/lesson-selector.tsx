@@ -114,7 +114,7 @@ export function LessonSelector({ onClose }: LessonSelectorProps) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div style={{
-        width: 820, maxWidth: 'calc(100vw - 32px)', maxHeight: '86vh',
+        width: 820, maxWidth: 'calc(100vw - 32px)', maxHeight: '85vh',
         background: C.surface,
         border: `1px solid ${C.border}`,
         borderRadius: 16,
@@ -261,11 +261,11 @@ export function LessonSelector({ onClose }: LessonSelectorProps) {
           </div>
         </div>
 
-        {/* Footer */}
+        {/* Footer — sticky so buttons are always accessible at small viewport heights */}
         <div style={{
-          padding: '12px 18px', borderTop: `1px solid ${C.border}`,
-          background: C.cream, display: 'flex', alignItems: 'center', gap: 8,
-          flexShrink: 0,
+          padding: '16px 18px', borderTop: `1px solid #E5DDD3`,
+          background: '#fff', display: 'flex', alignItems: 'center', gap: 8,
+          position: 'sticky', bottom: 0, flexShrink: 0,
         }}>
           <span style={{ fontFamily: SANS, fontSize: 11, color: C.faint }}>
             <kbd style={{ fontFamily: SANS, fontSize: 10, padding: '2px 6px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: 4 }}>↑↓</kbd> navigate ·{' '}

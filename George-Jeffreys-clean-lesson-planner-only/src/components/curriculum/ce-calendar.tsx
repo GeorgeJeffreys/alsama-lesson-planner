@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { C, SANS } from '@/lib/tokens';
 import { Icon } from '@/components/icon';
 import { CeLeftPanel, NavRow, HiBtn, Chip, Label, SKILL_COLOR, skillKey } from './ce-shell';
+import { LessonCard } from './lesson-card';
 import type { CurriculumLesson } from '@/types/curriculum';
 
 // ── Left navigator ────────────────────────────────────────────────────────────
@@ -236,15 +236,7 @@ interface WeekViewProps {
 }
 
 export function WeekView({ week, month, lessons, onBack }: WeekViewProps) {
-  const router = useRouter();
-  const [expandedPeriod, setExpandedPeriod] = useState<number | null>(null);
-
   const weekLO = lessons[0]?.knowledgeLO ?? '';
-
-  function togglePeriod(p: number, hasLesson: boolean, hasExtra: boolean) {
-    if (!hasLesson || !hasExtra) return;
-    setExpandedPeriod(prev => prev === p ? null : p);
-  }
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
@@ -282,148 +274,25 @@ export function WeekView({ week, month, lessons, onBack }: WeekViewProps) {
         </div>
       )}
 
-      {/* 5 period cards (accordion) */}
+      {/* 5 period rows using shared LessonCard with period number label */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 10, background: C.cream }}>
         {[1, 2, 3, 4, 5].map(p => {
           const lesson = lessons.find(l => l.periodNum === p);
-          // Diagnostic: log all fields so teachers can see what data is present
-          if (lesson) console.log('cell data:', lesson);
-          const sk = lesson ? skillKey(lesson.linguisticSkill) : 'basic';
-          const col = SKILL_COLOR[sk] ?? SKILL_COLOR.basic;
-          const isExpanded = expandedPeriod === p;
-          const hasExtra = !!(lesson?.grammarFocus || lesson?.vocabFocus);
-
-          return (
-            <div
-              key={p}
-              onClick={() => togglePeriod(p, !!lesson, hasExtra)}
-              style={{
-                background: '#FFFFFF',
-                border: `1px solid ${isExpanded ? col.line : '#E5DDD3'}`,
-                borderLeft: isExpanded ? `3px solid ${col.line}` : `1px solid #E5DDD3`,
-                borderRadius: 12,
-                cursor: (lesson && hasExtra) ? 'pointer' : 'default',
-                position: 'relative', overflow: 'hidden',
-                boxShadow: isExpanded ? '0 4px 16px rgba(56,30,30,0.08)' : '0 1px 0 rgba(56,30,30,0.02)',
-                opacity: lesson ? 1 : 0.5,
-                transition: 'border-color 0.15s, box-shadow 0.15s',
-              }}
-            >
-              {/* Always-visible row: period number left, lesson ID top-right, LO, chips */}
-              <div style={{ padding: '12px 16px 16px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                {/* Period badge — large number on left */}
-                <div style={{
-                  width: 48, flexShrink: 0,
-                  display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  paddingTop: 2,
-                }}>
-                  <span style={{ fontFamily: SANS, fontSize: 9.5, fontWeight: 700, color: C.faint2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>P</span>
-                  <span style={{ fontFamily: SANS, fontSize: 40, fontWeight: 800, color: isExpanded ? col.fg : C.ink, lineHeight: 1 }}>{p}</span>
-                </div>
-
-                {/* Main content column */}
-                {lesson ? (
-                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    {/* Lesson ID — top right */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                      <span style={{
-                        fontFamily: 'monospace', fontSize: 10.5, fontWeight: 600,
-                        color: C.faint2, letterSpacing: '0.02em',
-                      }}>
-                        {lesson.id}
-                      </span>
-                    </div>
-                    {/* Daily LO — 2-line clamp */}
-                    <span style={{
-                      fontFamily: SANS, fontSize: 13, fontWeight: 500, color: C.ink, lineHeight: 1.4,
-                      display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                    } as React.CSSProperties}>
-                      {lesson.dailyLO}
-                    </span>
-                    {/* Chips row + chevron */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginTop: 2 }}>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center',
-                        padding: '2px 8px', background: col.bg, color: col.fg,
-                        border: `1px solid ${col.bg}`, borderRadius: 999,
-                        fontFamily: SANS, fontSize: 10, fontWeight: 600,
-                      }}>{col.label}</span>
-                      {lesson.theme && <Chip tone="amber" size="sm">{lesson.theme}</Chip>}
-                      <div style={{ flex: 1 }} />
-                      {hasExtra && (
-                        <div style={{
-                          transform: isExpanded ? 'rotate(180deg)' : 'none',
-                          transition: 'transform 0.2s',
-                        }}>
-                          <Icon name="chevronDown" size={14} color={C.faint2} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', paddingTop: 8 }}>
-                    <span style={{ fontFamily: SANS, fontSize: 12, color: C.faint2 }}>No lesson scheduled</span>
-                  </div>
-                )}
+          // Diagnostic: verify data fields are populated before rendering
+          console.log('period cell data:', JSON.stringify(lesson ?? null));
+          if (!lesson) {
+            return (
+              <div key={p} style={{
+                minHeight: 80, borderRadius: 12, background: 'rgba(255,255,255,0.4)',
+                border: '1px dashed #D8CECC', display: 'flex', alignItems: 'center',
+                padding: '0 16px', gap: 16,
+              }}>
+                <span style={{ fontFamily: SANS, fontSize: 28, fontWeight: 800, color: '#D8CECC' }}>{p}</span>
+                <span style={{ fontFamily: SANS, fontSize: 12, color: C.faint2 }}>No lesson scheduled</span>
               </div>
-
-              {/* Expanded panel: full LO unclamped + grammar/vocab + navigate button */}
-              {isExpanded && lesson && (
-                <div
-                  onClick={e => e.stopPropagation()}
-                  style={{
-                    borderTop: `1px solid #E5DDD3`,
-                    padding: '14px 16px 16px',
-                    display: 'flex', flexDirection: 'column', gap: 12,
-                    background: '#FDFAF7',
-                  }}
-                >
-                  {/* Full LO unclamped */}
-                  <div>
-                    <Label style={{ display: 'block', marginBottom: 4 }}>Full learning outcome</Label>
-                    <span style={{ fontFamily: SANS, fontSize: 13, color: C.ink, lineHeight: 1.5 }}>{lesson.dailyLO}</span>
-                  </div>
-
-                  {/* Grammar / Vocab */}
-                  {(lesson.grammarFocus || lesson.vocabFocus) && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      {lesson.grammarFocus && (
-                        <div>
-                          <Label style={{ display: 'block', marginBottom: 3 }}>Grammar focus</Label>
-                          <span style={{ fontFamily: SANS, fontSize: 12, color: C.ink, lineHeight: 1.4 }}>{lesson.grammarFocus}</span>
-                        </div>
-                      )}
-                      {lesson.vocabFocus && (
-                        <div>
-                          <Label style={{ display: 'block', marginBottom: 3 }}>Vocab focus</Label>
-                          <span style={{ fontFamily: SANS, fontSize: 12, color: C.ink, lineHeight: 1.4 }}>{lesson.vocabFocus}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Single CTA — navigate directly to plan editor */}
-                  <button
-                    onClick={() => router.push(`/plan/new?lessonId=${encodeURIComponent(lesson.id)}`)}
-                    style={{
-                      alignSelf: 'flex-start',
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      height: 32, padding: '0 14px',
-                      fontFamily: SANS, fontSize: 12.5, fontWeight: 600,
-                      color: '#fff', background: C.pink,
-                      border: 'none', borderRadius: 8, cursor: 'pointer',
-                      boxShadow: '0 1px 0 rgba(0,0,0,0.06),inset 0 -1px 0 rgba(0,0,0,0.1)',
-                    }}
-                  >
-                    Open lesson plan →
-                  </button>
-                </div>
-              )}
-
-              {/* Skill colour bar at bottom */}
-              {lesson && <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 4, background: col.line }} />}
-            </div>
-          );
+            );
+          }
+          return <LessonCard key={p} lesson={lesson} periodLabel={p} />;
         })}
       </div>
 
