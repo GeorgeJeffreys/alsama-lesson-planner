@@ -9,7 +9,7 @@ import type { CurriculumLesson } from '@/types/curriculum';
 
 interface LessonCardProps {
   lesson: CurriculumLesson;
-  /** If set, renders a large period number label on the left side */
+  /** If set, renders a large period number label on the left and switches to calendar mode */
   periodLabel?: number;
 }
 
@@ -19,6 +19,7 @@ export function LessonCard({ lesson, periodLabel }: LessonCardProps) {
   const col = SKILL_COLOR[skillKey(lesson.linguisticSkill)] ?? SKILL_COLOR.basic;
   const hasExtra = !!(lesson.grammarFocus || lesson.vocabFocus);
   const planUrl = `/plan/new?lessonId=${encodeURIComponent(lesson.id)}`;
+  const isCalendar = periodLabel != null;
 
   let loText = lesson.dailyLO;
   if (!loText) {
@@ -49,7 +50,7 @@ export function LessonCard({ lesson, periodLabel }: LessonCardProps) {
       }}
     >
       <div style={{ display: 'flex', flex: 1 }}>
-        {periodLabel != null && (
+        {isCalendar && (
           <div style={{
             width: 56, flexShrink: 0,
             display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -73,6 +74,7 @@ export function LessonCard({ lesson, periodLabel }: LessonCardProps) {
               </Chip>
             )}
           </div>
+
           {/* Daily LO — 2-line clamp, always 2 lines visible */}
           <span style={{
             fontFamily: SANS, fontSize: 13, fontWeight: 500, color: C.ink, lineHeight: 1.4,
@@ -80,7 +82,24 @@ export function LessonCard({ lesson, periodLabel }: LessonCardProps) {
             WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
             minHeight: '2.8em',
           } as React.CSSProperties}>{loText}</span>
-          {/* Skill + theme chips */}
+
+          {/* Calendar mode: show grammar/vocab inline as faint text */}
+          {isCalendar && hasExtra && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 1 }}>
+              {lesson.grammarFocus && (
+                <span style={{ fontFamily: SANS, fontSize: 11, color: C.faint, lineHeight: 1.35 }}>
+                  <span style={{ fontWeight: 600 }}>Grammar: </span>{lesson.grammarFocus}
+                </span>
+              )}
+              {lesson.vocabFocus && (
+                <span style={{ fontFamily: SANS, fontSize: 11, color: C.faint, lineHeight: 1.35 }}>
+                  <span style={{ fontWeight: 600 }}>Vocab: </span>{lesson.vocabFocus}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Skill + theme chips (content mode gets expand chevron, calendar mode does not) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', marginTop: 2 }}>
             <span style={{
               display: 'inline-flex', alignItems: 'center',
@@ -89,25 +108,29 @@ export function LessonCard({ lesson, periodLabel }: LessonCardProps) {
               fontFamily: SANS, fontSize: 10, fontWeight: 600,
             }}>{col.label}</span>
             {lesson.theme && <Chip tone="amber" size="sm">{lesson.theme}</Chip>}
-            <div style={{ flex: 1 }} />
-            {hasExtra && (
-              <div
-                onClick={e => { e.stopPropagation(); setExpanded(x => !x); }}
-                style={{
-                  cursor: 'pointer',
-                  transform: expanded ? 'rotate(180deg)' : 'none',
-                  transition: 'transform 0.2s',
-                }}
-              >
-                <Icon name="chevronDown" size={13} color={C.faint2} />
-              </div>
+            {!isCalendar && (
+              <>
+                <div style={{ flex: 1 }} />
+                {hasExtra && (
+                  <div
+                    onClick={e => { e.stopPropagation(); setExpanded(x => !x); }}
+                    style={{
+                      cursor: 'pointer',
+                      transform: expanded ? 'rotate(180deg)' : 'none',
+                      transition: 'transform 0.2s',
+                    }}
+                  >
+                    <Icon name="chevronDown" size={13} color={C.faint2} />
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
       </div>
 
-      {/* Expanded: grammar / vocab focus */}
-      {expanded && hasExtra && (
+      {/* Content mode only: expanded grammar/vocab panel */}
+      {!isCalendar && expanded && hasExtra && (
         <div style={{
           borderTop: '1px solid #E5DDD3',
           padding: '10px 14px 12px',
@@ -129,7 +152,7 @@ export function LessonCard({ lesson, periodLabel }: LessonCardProps) {
         </div>
       )}
 
-      {/* Open lesson footer */}
+      {/* Footer: calendar shows "Plan this lesson →", content shows "Open lesson →" */}
       <div style={{
         padding: '8px 14px 12px',
         borderTop: '1px solid #E5DDD3',
@@ -140,7 +163,7 @@ export function LessonCard({ lesson, periodLabel }: LessonCardProps) {
           icon={<Icon name="arrowRight" size={12} color="#fff" />}
           onClick={() => router.push(planUrl)}
         >
-          Open lesson →
+          {isCalendar ? 'Plan this lesson →' : 'Open lesson →'}
         </HiBtn>
       </div>
 

@@ -77,3 +77,15 @@ input, textarea { font-family: inherit; }
     border-color: #ccc !important;
   }
 }
+
+/* Top bar responsive behaviour */
+@media (max-width: 900px) {
+  .top-bar-autosave {
+    display: none !important;
+  }
+}
+@media (max-width: 720px) {
+  .top-bar-export-label {
+    display: none;
+  }
+}
