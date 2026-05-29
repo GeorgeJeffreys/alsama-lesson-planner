@@ -96,7 +96,7 @@ export function TopBar({ lesson, saveStatus, onOpenSelector, onExport, exporting
             width: '100%',
           }}>{lessonSub}</span>
         </div>
-        <Icon name="chevronDown" size={15} color={C.faint} style={{ flexShrink: 0 }} />
+        <span style={{ flexShrink: 0, display: 'inline-flex' }}><Icon name="chevronDown" size={15} color={C.faint} /></span>
       </button>
 
       {/* Right: actions — all flexShrink: 0 so they never wrap */}
