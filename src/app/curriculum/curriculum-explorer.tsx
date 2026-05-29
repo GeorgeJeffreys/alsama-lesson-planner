@@ -224,7 +224,7 @@ export function CurriculumExplorer({ initialYear, initialYearData }: Props) {
       );
     }
 
-    // Content mode — simple lesson card grid (Fix #4)
+    // Content mode
     return (
       <ContentGrid
         lessons={themeLessons}
@@ -232,6 +232,7 @@ export function CurriculumExplorer({ initialYear, initialYearData }: Props) {
         focusedTheme={focusedTheme}
         skillBreakdown={yearData.skillBreakdown as SkillData[]}
         themes={themesForSkill}
+        onFocusTheme={setFocusedTheme}
       />
     );
   }
