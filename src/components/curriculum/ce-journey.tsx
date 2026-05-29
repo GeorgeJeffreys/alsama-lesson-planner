@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo, useCallback } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { C, SANS } from '@/lib/tokens';
 import { Icon } from '@/components/icon';
@@ -382,111 +382,7 @@ export function JourneyLeft({
   );
 }
 
-// ── KLO branch: KLO card + optional daily chips below ────────────────────────
-
-function KloBranch({
-  k, skillRef, expanded, dailyLessons, onToggle, onDailyClick,
-}: {
-  k: KnowledgeLO;
-  skillRef: string;
-  expanded: boolean;
-  dailyLessons: CurriculumLesson[];
-  onToggle: (ref: string) => void;
-  onDailyClick: (l: CurriculumLesson) => void;
-}) {
-  const cardRef = useRef<HTMLDivElement>(null);
-
-  function handleToggle() {
-    onToggle(k.ref);
-    // Keep the card in view after expansion — it stays anchored, children appear below
-    requestAnimationFrame(() => {
-      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <div ref={cardRef}>
-        <KloCard k={k} focused={expanded} faded={false} onClick={handleToggle} />
-      </div>
-      {expanded && (
-        <>
-          <TreeConnector height={16} />
-          {dailyLessons.length === 0 ? (
-            <span style={{ fontFamily: SANS, fontSize: 11, color: C.faint, fontStyle: 'italic' }}>
-              No daily lessons found.
-            </span>
-          ) : (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 520 }}>
-              {dailyLessons.map(l => (
-                <DailyChip key={l.id} lesson={l} onClick={() => onDailyClick(l)} />
-              ))}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── Skill branch: Skill card + optional KLO row below ────────────────────────
-
-function SkillBranch({
-  s, expanded, klos, expandedKlos, dailyByKey,
-  onToggleSkill, onToggleKlo, onDailyClick,
-}: {
-  s: SkillLO;
-  expanded: boolean;
-  klos: KnowledgeLO[];
-  expandedKlos: Set<string>;
-  dailyByKey: Map<string, CurriculumLesson[]>;
-  onToggleSkill: (ref: string) => void;
-  onToggleKlo: (ref: string) => void;
-  onDailyClick: (l: CurriculumLesson) => void;
-}) {
-  const cardRef = useRef<HTMLDivElement>(null);
-
-  function handleToggle() {
-    onToggleSkill(s.ref);
-    requestAnimationFrame(() => {
-      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <div ref={cardRef}>
-        <SkillCard s={s} focused={expanded} faded={false} onClick={handleToggle} />
-      </div>
-      {expanded && (
-        <>
-          <TreeConnector height={24} />
-          {klos.length === 0 ? (
-            <span style={{ fontFamily: SANS, fontSize: 11, color: C.faint, fontStyle: 'italic' }}>
-              Loading…
-            </span>
-          ) : (
-            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-              {klos.map(k => (
-                <KloBranch
-                  key={k.ref}
-                  k={k}
-                  skillRef={s.ref}
-                  expanded={expandedKlos.has(k.ref)}
-                  dailyLessons={dailyByKey.get(`${s.ref}|${k.ref}`) ?? []}
-                  onToggle={onToggleKlo}
-                  onDailyClick={onDailyClick}
-                />
-              ))}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── Journey Org Chart — recursive expanding tree ──────────────────────────────
+// ── Journey Org Chart — fixed-position tiers, no card jumping ────────────────
 
 export function JourneyOrgChart({
   skillLOs, klosBySkill, allLessons, focusedSkillRef, focusedKRef,
@@ -507,6 +403,7 @@ export function JourneyOrgChart({
   const [modalLesson, setModalLesson] = useState<CurriculumLesson | null>(null);
   const [expandedSkills, setExpandedSkills] = useState<Set<string>>(new Set());
   const [expandedKlos, setExpandedKlos] = useState<Set<string>>(new Set());
+  const outerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const panRef = useRef({ active: false, moved: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
 
@@ -522,10 +419,44 @@ export function JourneyOrgChart({
     return m;
   }, [allLessons]);
 
+  // KLOs visible in the KLO tier row (all expanded skills, flattened)
+  const visibleKlos = useMemo(() =>
+    [...expandedSkills].flatMap(skillRef =>
+      (klosBySkill.get(skillRef) ?? []).map(k => ({ k, skillRef }))
+    ),
+  [expandedSkills, klosBySkill]);
+
+  // Daily lessons visible in the Daily tier row (all expanded KLOs, flattened)
+  const visibleDailyLessons = useMemo(() => {
+    const out: CurriculumLesson[] = [];
+    expandedKlos.forEach(kRef => {
+      klosBySkill.forEach((klos, skillRef) => {
+        if (klos.some(k => k.ref === kRef)) {
+          out.push(...(dailyByKey.get(`${skillRef}|${kRef}`) ?? []));
+        }
+      });
+    });
+    return out;
+  }, [expandedKlos, klosBySkill, dailyByKey]);
+
+  // Pinch-to-zoom: ctrl+wheel fires on Mac trackpad pinch
+  useEffect(() => {
+    const el = outerRef.current;
+    if (!el) return;
+    function handleWheel(e: WheelEvent) {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        setZoom(z => Math.min(1.5, Math.max(0.3, z - e.deltaY * 0.005)));
+      }
+    }
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, []);
+
   const toggleSkill = useCallback((ref: string) => {
     setExpandedSkills(prev => {
       const next = new Set(prev);
-      if (next.has(ref)) { next.delete(ref); } else { next.add(ref); }
+      if (next.has(ref)) next.delete(ref); else next.add(ref);
       return next;
     });
     onFocusSkill(ref);
@@ -534,7 +465,7 @@ export function JourneyOrgChart({
   const toggleKlo = useCallback((ref: string) => {
     setExpandedKlos(prev => {
       const next = new Set(prev);
-      if (next.has(ref)) { next.delete(ref); } else { next.add(ref); }
+      if (next.has(ref)) next.delete(ref); else next.add(ref);
       return next;
     });
     onFocusKRef(ref);
@@ -581,9 +512,11 @@ export function JourneyOrgChart({
   return (
     <>
       <div
+        ref={outerRef}
         style={{
           flex: 1, position: 'relative', overflow: 'hidden',
           background: C.cream, cursor: cursorMode, userSelect: 'none',
+          touchAction: 'none',
         }}
         onMouseDown={onPanStart}
         onMouseMove={onPanMove}
@@ -595,33 +528,83 @@ export function JourneyOrgChart({
           ref={scrollRef}
           style={{ position: 'absolute', inset: 0, overflowY: 'auto', overflowX: 'auto' }}
         >
+          {/* Scaled canvas — fixed-position tiers so cards never shift on expand */}
           <div style={{
             transform: `scale(${zoom})`,
             transformOrigin: 'top center',
-            minWidth: 'max-content',
-            padding: '40px 40px 80px',
+            position: 'relative',
+            minHeight: 1200,
+            minWidth: 1400,
           }}>
-            {/* Root card centred */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            {/* Tier 1: Total LO — top: 20px, always visible */}
+            <div style={{
+              position: 'absolute', top: 20, left: 0, right: 0,
+              display: 'flex', justifyContent: 'center',
+            }}>
               <RootCard totalLessons={totalLessons} year={year} />
-              <TreeConnector height={28} />
-              {/* Skill cards row — each has its own expanding subtree */}
-              <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+            </div>
+
+            {/* Tier 2: Skill LOs — top: 140px, always visible */}
+            <div style={{
+              position: 'absolute', top: 140, left: 40, right: 40,
+              display: 'flex', justifyContent: 'center',
+            }}>
+              <div style={{ display: 'flex', gap: 16 }}>
                 {skillLOs.map(s => (
-                  <SkillBranch
-                    key={s.ref}
-                    s={s}
-                    expanded={expandedSkills.has(s.ref)}
-                    klos={klosBySkill.get(s.ref) ?? []}
-                    expandedKlos={expandedKlos}
-                    dailyByKey={dailyByKey}
-                    onToggleSkill={toggleSkill}
-                    onToggleKlo={toggleKlo}
-                    onDailyClick={setModalLesson}
+                  <SkillCard
+                    key={s.ref} s={s}
+                    focused={expandedSkills.has(s.ref)}
+                    faded={false}
+                    onClick={() => toggleSkill(s.ref)}
                   />
                 ))}
               </div>
             </div>
+
+            {/* Tier 3: KLOs — top: 320px, visible when any skill expanded */}
+            {expandedSkills.size > 0 && (
+              <div style={{
+                position: 'absolute', top: 320, left: 40, right: 40,
+                display: 'flex', justifyContent: 'center',
+              }}>
+                {visibleKlos.length === 0 ? (
+                  <span style={{ fontFamily: SANS, fontSize: 12, color: C.faint, fontStyle: 'italic' }}>
+                    Loading knowledge outcomes…
+                  </span>
+                ) : (
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 1200 }}>
+                    {visibleKlos.map(({ k }) => (
+                      <KloCard
+                        key={k.ref} k={k}
+                        focused={expandedKlos.has(k.ref)}
+                        faded={false}
+                        onClick={() => toggleKlo(k.ref)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tier 4: Daily LOs — top: 500px, visible when any KLO expanded */}
+            {expandedKlos.size > 0 && (
+              <div style={{
+                position: 'absolute', top: 500, left: 40, right: 40,
+                display: 'flex', justifyContent: 'center',
+              }}>
+                {visibleDailyLessons.length === 0 ? (
+                  <span style={{ fontFamily: SANS, fontSize: 12, color: C.faint, fontStyle: 'italic' }}>
+                    No lessons found for this outcome.
+                  </span>
+                ) : (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 1100 }}>
+                    {visibleDailyLessons.map(l => (
+                      <DailyChip key={l.id} lesson={l} onClick={() => setModalLesson(l)} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
