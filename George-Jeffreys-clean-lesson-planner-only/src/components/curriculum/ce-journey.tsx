@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect, useLayoutEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { C, SANS } from '@/lib/tokens';
 import { Icon } from '@/components/icon';
@@ -416,6 +416,13 @@ export function JourneyOrgChart({
   const kloCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const panRef = useRef({ active: false, moved: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
 
+  // Tier row refs for sticky label overlay measurement
+  const tier1Ref = useRef<HTMLDivElement>(null);
+  const tier2Ref = useRef<HTMLDivElement>(null);
+  const tier3Ref = useRef<HTMLDivElement>(null);
+  const tier4Ref = useRef<HTMLDivElement>(null);
+  const [tierTops, setTierTops] = useState<Record<string, number>>({});
+
   // Stable refs for ResizeObserver callback
   const expandedSkillsRef = useRef(expandedSkills);
   const expandedKlosRef = useRef(expandedKlos);
@@ -522,6 +529,30 @@ export function JourneyOrgChart({
 
   // Recompute when zoom changes
   useEffect(() => { recomputePositions(); }, [zoom, recomputePositions]);
+
+  // Measure tier row tops for sticky label overlay
+  const measureTierTops = useCallback(() => {
+    const outer = outerRef.current;
+    if (!outer) return;
+    const outerTop = outer.getBoundingClientRect().top;
+    const tops: Record<string, number> = {};
+    if (tier1Ref.current) tops.t1 = tier1Ref.current.getBoundingClientRect().top - outerTop;
+    if (tier2Ref.current) tops.t2 = tier2Ref.current.getBoundingClientRect().top - outerTop;
+    if (tier3Ref.current) tops.t3 = tier3Ref.current.getBoundingClientRect().top - outerTop;
+    if (tier4Ref.current) tops.t4 = tier4Ref.current.getBoundingClientRect().top - outerTop;
+    setTierTops(tops);
+  }, []);
+
+  useLayoutEffect(() => {
+    measureTierTops();
+  }, [measureTierTops, zoom, expandedSkills.size, expandedKlos.size]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', measureTierTops);
+    return () => el.removeEventListener('scroll', measureTierTops);
+  }, [measureTierTops]);
 
   // Pinch-to-zoom: ctrl+wheel = Mac trackpad pinch
   useEffect(() => {
@@ -671,14 +702,14 @@ export function JourneyOrgChart({
             }}
           >
             {/* Tier 1: Total LO */}
-            <div style={{ padding: '28px 40px 24px', width: '100%', display: 'flex', justifyContent: 'center' }}>
+            <div ref={tier1Ref} style={{ padding: '28px 40px 24px', width: '100%', display: 'flex', justifyContent: 'center' }}>
               <div style={{ maxWidth: 500, width: '100%' }}>
                 <RootCard totalLessons={totalLessons} year={year} />
               </div>
             </div>
 
             {/* Tier 2: Skill LOs — flex row, never wraps, min-width: max-content */}
-            <div style={{ padding: '0 24px 24px', display: 'flex', justifyContent: 'center', width: '100%', boxSizing: 'border-box' }}>
+            <div ref={tier2Ref} style={{ padding: '0 24px 24px', display: 'flex', justifyContent: 'center', width: '100%', boxSizing: 'border-box' }}>
               <div style={{ display: 'flex', flexDirection: 'row', gap: 16, flexWrap: 'nowrap', minWidth: 'max-content' }}>
                 {skillLOs.map(s => (
                   <div
@@ -698,9 +729,9 @@ export function JourneyOrgChart({
 
             {/* Tier 3: KLO groups — absolutely positioned under parent Skill cards */}
             {expandedSkills.size > 0 && (
-              <div style={{
+              <div ref={tier3Ref} style={{
                 position: 'relative',
-                minHeight: 180,
+                minHeight: 120,
                 width: '100%',
                 boxSizing: 'border-box',
                 overflow: 'visible',
@@ -741,7 +772,7 @@ export function JourneyOrgChart({
 
             {/* Tier 4: Daily chips — absolutely positioned under parent KLO cards */}
             {expandedKlos.size > 0 && (
-              <div style={{
+              <div ref={tier4Ref} style={{
                 position: 'relative',
                 minHeight: 120,
                 width: '100%',
@@ -773,6 +804,48 @@ export function JourneyOrgChart({
               </div>
             )}
           </div>
+        </div>
+
+        {/* Tier label overlay — sticky-left pills that stay at the left edge on horizontal scroll */}
+        <div style={{
+          position: 'absolute', left: 0, top: 0, bottom: 0,
+          width: 92, pointerEvents: 'none', zIndex: 10, overflow: 'hidden',
+        }}>
+          {([
+            { key: 't1', text: 'TOTAL LO',   accent: C.pink,  show: true },
+            { key: 't2', text: 'SKILL LO',   accent: C.amber, show: true },
+            { key: 't3', text: 'KNOWLEDGE',  accent: C.teal,  show: expandedSkills.size > 0 },
+            { key: 't4', text: 'DAILY LO',   accent: C.faint, show: expandedKlos.size > 0 },
+          ] as const).filter(l => l.show && tierTops[l.key] != null && tierTops[l.key] > -10).map(l => (
+            <div
+              key={l.key}
+              style={{
+                position: 'absolute',
+                left: 8,
+                top: tierTops[l.key] + 10,
+                width: 80,
+                background: 'rgba(245, 237, 229, 0.72)',
+                backdropFilter: 'blur(6px)',
+                WebkitBackdropFilter: 'blur(6px)',
+                border: `1px solid ${C.border}`,
+                borderRadius: 6,
+                padding: '6px 10px 6px 13px',
+                display: 'inline-flex',
+                alignItems: 'center',
+              }}
+            >
+              {/* Coloured left accent bar */}
+              <div style={{
+                position: 'absolute', left: 0, top: 4, bottom: 4,
+                width: 3, background: l.accent, borderRadius: '2px 0 0 2px',
+              }} />
+              <span style={{
+                fontFamily: SANS, fontSize: 10, fontWeight: 700,
+                color: '#6E6863', textTransform: 'uppercase', letterSpacing: '0.08em',
+                whiteSpace: 'nowrap',
+              }}>{l.text}</span>
+            </div>
+          ))}
         </div>
 
         <ZoomControls
