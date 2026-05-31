@@ -431,6 +431,13 @@ export function JourneyOrgChart({
     })),
   [expandedSkills, klosBySkill]);
 
+  // Sort KLO groups left-to-right by parent Skill card position so they never overlap
+  const sortedKloGroups = useMemo(() =>
+    [...visibleKlosBySkill].sort((a, b) =>
+      (kloPositions.get(a.skillRef) ?? 0) - (kloPositions.get(b.skillRef) ?? 0)
+    ),
+  [visibleKlosBySkill, kloPositions]);
+
   const visibleDailyLessons = useMemo(() => {
     const out: CurriculumLesson[] = [];
     expandedKlos.forEach(kRef => {
@@ -479,6 +486,13 @@ export function JourneyOrgChart({
         setKloPositions(m => new Map(m).set(ref, centerX));
       }
     } else {
+      // Cascade: collapse all KLO children and their Daily grandchildren
+      const kloRefs = new Set((klosBySkill.get(ref) ?? []).map(k => k.ref));
+      setExpandedKlos(prev => {
+        const next = new Set(prev);
+        kloRefs.forEach(r => next.delete(r));
+        return next;
+      });
       setKloPositions(m => { const n = new Map(m); n.delete(ref); return n; });
     }
 
@@ -592,44 +606,32 @@ export function JourneyOrgChart({
               </div>
             </div>
 
-            {/* Tier 3: KLO row — position relative so groups can be anchored to parent skill */}
+            {/* Tier 3: KLO row — flex row sorted by parent Skill card position.
+                Groups are ordered left-to-right matching their parent cards so they
+                never overlap. gap: 24px guarantees at least 16px between groups. */}
             {expandedSkills.size > 0 && (
               <div style={{
-                position: 'relative',
-                minHeight: 160,
-                width: '100%',
-                marginBottom: 16,
+                display: 'flex', flexDirection: 'row', gap: 24, flexWrap: 'nowrap',
+                alignItems: 'flex-start', justifyContent: 'center',
+                padding: '8px 24px 16px', minHeight: 160,
+                width: '100%', boxSizing: 'border-box',
               }}>
-                {visibleKlosBySkill.map(({ skillRef, klos }) => {
-                  const centerX = kloPositions.get(skillRef) ?? 0;
-                  return (
-                    <div
-                      key={skillRef}
-                      style={{
-                        position: 'absolute',
-                        left: centerX,
-                        top: 8,
-                        transform: 'translateX(-50%)',
-                        display: 'flex',
-                        gap: 12,
-                        flexWrap: 'nowrap',
-                      }}
-                    >
-                      {klos.length === 0 ? (
-                        <span style={{ fontFamily: SANS, fontSize: 11, color: C.faint, fontStyle: 'italic', whiteSpace: 'nowrap' }}>
-                          Loading…
-                        </span>
-                      ) : klos.map(k => (
-                        <KloCard
-                          key={k.ref} k={k}
-                          focused={expandedKlos.has(k.ref)}
-                          faded={false}
-                          onClick={() => toggleKlo(k.ref)}
-                        />
-                      ))}
-                    </div>
-                  );
-                })}
+                {sortedKloGroups.map(({ skillRef, klos }) => (
+                  <div key={skillRef} style={{ display: 'flex', gap: 12, flexShrink: 0, flexWrap: 'nowrap' }}>
+                    {klos.length === 0 ? (
+                      <span style={{ fontFamily: SANS, fontSize: 11, color: C.faint, fontStyle: 'italic', whiteSpace: 'nowrap' }}>
+                        Loading…
+                      </span>
+                    ) : klos.map(k => (
+                      <KloCard
+                        key={k.ref} k={k}
+                        focused={expandedKlos.has(k.ref)}
+                        faded={false}
+                        onClick={() => toggleKlo(k.ref)}
+                      />
+                    ))}
+                  </div>
+                ))}
               </div>
             )}
 
