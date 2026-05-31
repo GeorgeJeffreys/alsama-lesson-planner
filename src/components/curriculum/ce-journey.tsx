@@ -382,7 +382,10 @@ export function JourneyLeft({
   );
 }
 
-// ── Journey Org Chart — flow layout, KLOs anchored on parent Skill card ───────
+// ── Journey Org Chart — ref-based centering with overlap resolution ───────────
+
+const KLO_W = 190, KLO_GAP = 12, GROUP_GAP = 16;
+const DAILY_W = 160, DAILY_GAP = 8, DAILY_GROUP_GAP = 16;
 
 export function JourneyOrgChart({
   skillLOs, klosBySkill, allLessons, focusedSkillRef, focusedKRef,
@@ -403,14 +406,23 @@ export function JourneyOrgChart({
   const [modalLesson, setModalLesson] = useState<CurriculumLesson | null>(null);
   const [expandedSkills, setExpandedSkills] = useState<Set<string>>(new Set());
   const [expandedKlos, setExpandedKlos] = useState<Set<string>>(new Set());
-  // canvas-space X centre for each expanded skill (used to anchor KLO groups)
   const [kloPositions, setKloPositions] = useState<Map<string, number>>(new Map());
+  const [dailyPositions, setDailyPositions] = useState<Map<string, number>>(new Map());
 
   const outerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const skillCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const kloCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const panRef = useRef({ active: false, moved: false, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
+
+  // Stable refs for ResizeObserver callback
+  const expandedSkillsRef = useRef(expandedSkills);
+  const expandedKlosRef = useRef(expandedKlos);
+  const zoomRef = useRef(zoom);
+  useEffect(() => { expandedSkillsRef.current = expandedSkills; }, [expandedSkills]);
+  useEffect(() => { expandedKlosRef.current = expandedKlos; }, [expandedKlos]);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
 
   const dailyByKey = useMemo(() => {
     const m = new Map<string, CurriculumLesson[]>();
@@ -424,31 +436,92 @@ export function JourneyOrgChart({
     return m;
   }, [allLessons]);
 
-  const visibleKlosBySkill = useMemo(() =>
-    [...expandedSkills].map(skillRef => ({
-      skillRef,
-      klos: klosBySkill.get(skillRef) ?? [],
-    })),
-  [expandedSkills, klosBySkill]);
+  // KLO groups with overlap-resolved left positions
+  const adjustedKloLayout = useMemo(() => {
+    const groups = [...expandedSkills]
+      .filter(ref => kloPositions.has(ref))
+      .map(ref => {
+        const klos = klosBySkill.get(ref) ?? [];
+        const w = klos.length * KLO_W + Math.max(0, klos.length - 1) * KLO_GAP;
+        const center = kloPositions.get(ref)!;
+        return { skillRef: ref, klos, w, center, left: center - w / 2 };
+      })
+      .sort((a, b) => a.center - b.center);
 
-  // Sort KLO groups left-to-right by parent Skill card position so they never overlap
-  const sortedKloGroups = useMemo(() =>
-    [...visibleKlosBySkill].sort((a, b) =>
-      (kloPositions.get(a.skillRef) ?? 0) - (kloPositions.get(b.skillRef) ?? 0)
-    ),
-  [visibleKlosBySkill, kloPositions]);
+    for (let i = 1; i < groups.length; i++) {
+      const prev = groups[i - 1];
+      const cur = groups[i];
+      const minLeft = prev.left + prev.w + GROUP_GAP;
+      if (cur.left < minLeft) cur.left = minLeft;
+    }
+    return groups;
+  }, [expandedSkills, kloPositions, klosBySkill]);
 
-  const visibleDailyLessons = useMemo(() => {
-    const out: CurriculumLesson[] = [];
-    expandedKlos.forEach(kRef => {
-      klosBySkill.forEach((klos, skillRef) => {
-        if (klos.some(k => k.ref === kRef)) {
-          out.push(...(dailyByKey.get(`${skillRef}|${kRef}`) ?? []));
-        }
-      });
+  // Daily groups with overlap-resolved left positions
+  const adjustedDailyLayout = useMemo(() => {
+    const groups = [...expandedKlos]
+      .filter(ref => dailyPositions.has(ref))
+      .map(ref => {
+        let lessons: CurriculumLesson[] = [];
+        klosBySkill.forEach((klos, skillRef) => {
+          if (klos.some(k => k.ref === ref)) {
+            lessons = dailyByKey.get(`${skillRef}|${ref}`) ?? [];
+          }
+        });
+        const w = lessons.length * DAILY_W + Math.max(0, lessons.length - 1) * DAILY_GAP;
+        const center = dailyPositions.get(ref)!;
+        return { kloRef: ref, lessons, w, center, left: center - w / 2 };
+      })
+      .sort((a, b) => a.center - b.center);
+
+    for (let i = 1; i < groups.length; i++) {
+      const prev = groups[i - 1];
+      const cur = groups[i];
+      const minLeft = prev.left + prev.w + DAILY_GROUP_GAP;
+      if (cur.left < minLeft) cur.left = minLeft;
+    }
+    return groups;
+  }, [expandedKlos, dailyPositions, klosBySkill, dailyByKey]);
+
+  // Re-measure all expanded items (called on resize and zoom change)
+  const recomputePositions = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const canvasRect = canvas.getBoundingClientRect();
+    const z = zoomRef.current;
+
+    const newKlo = new Map<string, number>();
+    expandedSkillsRef.current.forEach(ref => {
+      const el = skillCardRefs.current.get(ref);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        newKlo.set(ref, (r.left - canvasRect.left + r.width / 2) / z);
+      }
     });
-    return out;
-  }, [expandedKlos, klosBySkill, dailyByKey]);
+    setKloPositions(newKlo);
+
+    const newDaily = new Map<string, number>();
+    expandedKlosRef.current.forEach(ref => {
+      const el = kloCardRefs.current.get(ref);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        newDaily.set(ref, (r.left - canvasRect.left + r.width / 2) / z);
+      }
+    });
+    setDailyPositions(newDaily);
+  }, []);
+
+  // ResizeObserver on canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ro = new ResizeObserver(recomputePositions);
+    ro.observe(canvas);
+    return () => ro.disconnect();
+  }, [recomputePositions]);
+
+  // Recompute when zoom changes
+  useEffect(() => { recomputePositions(); }, [zoom, recomputePositions]);
 
   // Pinch-to-zoom: ctrl+wheel = Mac trackpad pinch
   useEffect(() => {
@@ -467,44 +540,61 @@ export function JourneyOrgChart({
   function handleSkillClick(ref: string) {
     const isExpanding = !expandedSkills.has(ref);
 
+    if (isExpanding) {
+      const cardEl = skillCardRefs.current.get(ref);
+      const canvas = canvasRef.current;
+      if (cardEl && canvas) {
+        const cardRect = cardEl.getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+        const centerX = (cardRect.left - canvasRect.left + cardRect.width / 2) / zoom;
+        setKloPositions(m => new Map(m).set(ref, centerX));
+      }
+    } else {
+      const kloRefs = (klosBySkill.get(ref) ?? []).map(k => k.ref);
+      setExpandedKlos(prev => {
+        const next = new Set(prev);
+        kloRefs.forEach(r => next.delete(r));
+        return next;
+      });
+      setDailyPositions(m => {
+        const n = new Map(m);
+        kloRefs.forEach(r => n.delete(r));
+        return n;
+      });
+      setKloPositions(m => { const n = new Map(m); n.delete(ref); return n; });
+    }
+
     setExpandedSkills(prev => {
       const next = new Set(prev);
       if (next.has(ref)) next.delete(ref); else next.add(ref);
       return next;
     });
 
-    if (isExpanding) {
-      // Compute canvas-space centre X of this skill card
-      const cardEl = skillCardRefs.current.get(ref);
-      const canvas = canvasRef.current;
-      if (cardEl && canvas) {
-        const cardRect = cardEl.getBoundingClientRect();
-        const canvasRect = canvas.getBoundingClientRect();
-        // getBoundingClientRect returns screen-space coords (after scale transform)
-        // divide by zoom to get canvas-space coordinate
-        const centerX = (cardRect.left - canvasRect.left + cardRect.width / 2) / zoom;
-        setKloPositions(m => new Map(m).set(ref, centerX));
-      }
-    } else {
-      // Cascade: collapse all KLO children and their Daily grandchildren
-      const kloRefs = new Set((klosBySkill.get(ref) ?? []).map(k => k.ref));
-      setExpandedKlos(prev => {
-        const next = new Set(prev);
-        kloRefs.forEach(r => next.delete(r));
-        return next;
-      });
-      setKloPositions(m => { const n = new Map(m); n.delete(ref); return n; });
-    }
-
     onFocusSkill(ref);
   }
 
-  const toggleKlo = useCallback((ref: string) => {
+  const handleKloClick = useCallback((ref: string) => {
+    const isExpanding = !expandedKlosRef.current.has(ref);
+
+    if (isExpanding) {
+      const kloEl = kloCardRefs.current.get(ref);
+      const canvas = canvasRef.current;
+      if (kloEl && canvas) {
+        const r = kloEl.getBoundingClientRect();
+        const canvasRect = canvas.getBoundingClientRect();
+        const centerX = (r.left - canvasRect.left + r.width / 2) / zoomRef.current;
+        setDailyPositions(m => new Map(m).set(ref, centerX));
+      }
+    } else {
+      setDailyPositions(m => { const n = new Map(m); n.delete(ref); return n; });
+    }
+
     setExpandedKlos(prev => {
       const next = new Set(prev);
       if (next.has(ref)) next.delete(ref); else next.add(ref);
       return next;
     });
+
     onFocusKRef(ref);
   }, [onFocusKRef]);
 
@@ -606,49 +696,80 @@ export function JourneyOrgChart({
               </div>
             </div>
 
-            {/* Tier 3: KLO row — flex row sorted by parent Skill card position.
-                Groups are ordered left-to-right matching their parent cards so they
-                never overlap. gap: 24px guarantees at least 16px between groups. */}
+            {/* Tier 3: KLO groups — absolutely positioned under parent Skill cards */}
             {expandedSkills.size > 0 && (
               <div style={{
-                display: 'flex', flexDirection: 'row', gap: 24, flexWrap: 'nowrap',
-                alignItems: 'flex-start', justifyContent: 'center',
-                padding: '8px 24px 16px', minHeight: 160,
-                width: '100%', boxSizing: 'border-box',
+                position: 'relative',
+                minHeight: 180,
+                width: '100%',
+                boxSizing: 'border-box',
+                overflow: 'visible',
               }}>
-                {sortedKloGroups.map(({ skillRef, klos }) => (
-                  <div key={skillRef} style={{ display: 'flex', gap: 12, flexShrink: 0, flexWrap: 'nowrap' }}>
+                {adjustedKloLayout.map(({ skillRef, klos, left }) => (
+                  <div
+                    key={skillRef}
+                    style={{
+                      position: 'absolute',
+                      left,
+                      top: 8,
+                      display: 'flex',
+                      gap: KLO_GAP,
+                      flexWrap: 'nowrap',
+                    }}
+                  >
                     {klos.length === 0 ? (
                       <span style={{ fontFamily: SANS, fontSize: 11, color: C.faint, fontStyle: 'italic', whiteSpace: 'nowrap' }}>
                         Loading…
                       </span>
                     ) : klos.map(k => (
-                      <KloCard
-                        key={k.ref} k={k}
-                        focused={expandedKlos.has(k.ref)}
-                        faded={false}
-                        onClick={() => toggleKlo(k.ref)}
-                      />
+                      <div
+                        key={k.ref}
+                        ref={el => { if (el) kloCardRefs.current.set(k.ref, el); else kloCardRefs.current.delete(k.ref); }}
+                      >
+                        <KloCard
+                          k={k}
+                          focused={expandedKlos.has(k.ref)}
+                          faded={false}
+                          onClick={() => handleKloClick(k.ref)}
+                        />
+                      </div>
                     ))}
                   </div>
                 ))}
               </div>
             )}
 
-            {/* Tier 4: Daily LOs */}
+            {/* Tier 4: Daily chips — absolutely positioned under parent KLO cards */}
             {expandedKlos.size > 0 && (
-              <div style={{ padding: '0 40px 24px', display: 'flex', justifyContent: 'center', width: '100%', boxSizing: 'border-box' }}>
-                {visibleDailyLessons.length === 0 ? (
-                  <span style={{ fontFamily: SANS, fontSize: 12, color: C.faint, fontStyle: 'italic' }}>
-                    No lessons found for this outcome.
-                  </span>
-                ) : (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 1100 }}>
-                    {visibleDailyLessons.map(l => (
+              <div style={{
+                position: 'relative',
+                minHeight: 120,
+                width: '100%',
+                boxSizing: 'border-box',
+                overflow: 'visible',
+                paddingBottom: 24,
+              }}>
+                {adjustedDailyLayout.map(({ kloRef, lessons, left }) => (
+                  <div
+                    key={kloRef}
+                    style={{
+                      position: 'absolute',
+                      left,
+                      top: 8,
+                      display: 'flex',
+                      gap: DAILY_GAP,
+                      flexWrap: 'nowrap',
+                    }}
+                  >
+                    {lessons.length === 0 ? (
+                      <span style={{ fontFamily: SANS, fontSize: 11, color: C.faint, fontStyle: 'italic', whiteSpace: 'nowrap' }}>
+                        No lessons
+                      </span>
+                    ) : lessons.map(l => (
                       <DailyChip key={l.id} lesson={l} onClick={() => setModalLesson(l)} />
                     ))}
                   </div>
-                )}
+                ))}
               </div>
             )}
           </div>
