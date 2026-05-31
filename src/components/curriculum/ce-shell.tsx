@@ -1,5 +1,6 @@
 'use client';
 
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { C, SANS } from '@/lib/tokens';
 import { Icon } from '@/components/icon';
@@ -609,20 +610,113 @@ export function TopChrome({ label, badge }: { label: string; badge?: string }) {
 
 // ── CeShell ───────────────────────────────────────────────────────────────────
 
+const TOGGLE_BTN: React.CSSProperties = {
+  width: 28, height: 28,
+  background: '#F5EDE5', border: `1px solid #E5DDD3`,
+  borderRadius: 6, cursor: 'pointer',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  flexShrink: 0, zIndex: 10,
+  boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+};
+
 export function CeShell({ topBar, modeTabs, leftPanel, main, rightSidebar }: {
   topBar: React.ReactNode; modeTabs: React.ReactNode;
   leftPanel: React.ReactNode; main: React.ReactNode; rightSidebar: React.ReactNode;
 }) {
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+
+  // Persist panel states
+  useEffect(() => {
+    try {
+      const l = localStorage.getItem('ce-left-panel-collapsed');
+      const r = localStorage.getItem('ce-right-panel-collapsed');
+      if (l !== null) setLeftCollapsed(l === 'true');
+      if (r !== null) setRightCollapsed(r === 'true');
+    } catch { /* localStorage unavailable */ }
+  }, []);
+
+  function toggleLeft() {
+    setLeftCollapsed(v => {
+      const next = !v;
+      try { localStorage.setItem('ce-left-panel-collapsed', String(next)); } catch { /* */ }
+      return next;
+    });
+  }
+
+  function toggleRight() {
+    setRightCollapsed(v => {
+      const next = !v;
+      try { localStorage.setItem('ce-right-panel-collapsed', String(next)); } catch { /* */ }
+      return next;
+    });
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: C.creamDeep, fontFamily: SANS, color: C.ink }}>
       {topBar}
       {modeTabs}
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-        {leftPanel}
+
+        {/* Left panel group — outer div is NOT overflow:hidden so toggle btn can overhang */}
+        <div style={{ position: 'relative', flexShrink: 0, display: 'flex' }}>
+          <div style={{
+            width: leftCollapsed ? 0 : 256,
+            transition: 'width 0.2s ease',
+            overflow: 'hidden',
+            flexShrink: 0,
+            height: '100%',
+          }}>
+            {leftPanel}
+          </div>
+          {/* Toggle button — centred on the panel's right edge */}
+          <button
+            onClick={toggleLeft}
+            title={leftCollapsed ? 'Expand panel' : 'Collapse panel'}
+            style={{
+              ...TOGGLE_BTN,
+              position: 'absolute',
+              right: -14,
+              top: '50%',
+              transform: 'translateY(-50%)',
+            }}
+          >
+            <Icon name={leftCollapsed ? 'chevronRight' : 'chevronLeft'} size={13} color={C.faint} />
+          </button>
+        </div>
+
+        {/* Main canvas */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, background: C.cream }}>
           {main}
         </div>
-        {rightSidebar}
+
+        {/* Right sidebar group */}
+        <div style={{ position: 'relative', flexShrink: 0, display: 'flex' }}>
+          {/* Toggle button — centred on the sidebar's left edge */}
+          <button
+            onClick={toggleRight}
+            title={rightCollapsed ? 'Expand panel' : 'Collapse panel'}
+            style={{
+              ...TOGGLE_BTN,
+              position: 'absolute',
+              left: -14,
+              top: '50%',
+              transform: 'translateY(-50%)',
+            }}
+          >
+            <Icon name={rightCollapsed ? 'chevronLeft' : 'chevronRight'} size={13} color={C.faint} />
+          </button>
+          <div style={{
+            width: rightCollapsed ? 0 : 296,
+            transition: 'width 0.2s ease',
+            overflow: 'hidden',
+            flexShrink: 0,
+            height: '100%',
+          }}>
+            {rightSidebar}
+          </div>
+        </div>
+
       </div>
     </div>
   );
